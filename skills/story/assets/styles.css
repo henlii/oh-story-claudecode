@@ -1524,7 +1524,7 @@ kbd {
 
   .diff-line {
     gap: 6px;
-    padding: 0 8px;
+    padding: 0 4px 0 8px;
   }
 
   #editorInput,
@@ -1635,7 +1635,8 @@ kbd {
 .diff-line {
   display: flex;
   gap: 8px;
-  padding: 0 clamp(8px, 1.6vw, 20px);
+  /* 左侧还要容纳行号列，右侧按行号本身占的空白对齐，别再叠一层缩进 */
+  padding: 0 clamp(4px, 0.8vw, 10px) 0 clamp(8px, 1.6vw, 20px);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
