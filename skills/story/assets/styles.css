@@ -840,6 +840,13 @@ kbd {
 }
 
 .editor-body {
+  /* 三个视图的正文左边缘都落在 --reading-inset 上：
+     预览直接用它，编辑减去行号槽宽度，差异减去行号列与间距 */
+  --reading-inset: clamp(40px, 4.2vw, 60px);
+  --reading-inset-plain: clamp(24px, 4vw, 64px);
+  --gutter-width: clamp(26px, 3vw, 36px);
+  --diff-no-width: 22px;
+  --diff-gap: 8px;
   min-height: 0;
   position: relative;
   overflow: hidden;
@@ -893,8 +900,8 @@ kbd {
 }
 
 .line-numbers-gutter {
-  flex: 0 0 46px;
-  width: 46px;
+  flex: 0 0 var(--gutter-width);
+  width: var(--gutter-width);
   height: 100%;
   margin: 0;
   padding: 28px 0 80px;
@@ -933,8 +940,8 @@ kbd {
   flex: 1 1 0%;
   width: 0;
   min-width: 0;
-  /* 左侧已有行号槽，正文缩进只要一小段，别把它叠成大留白 */
-  padding-left: 12px;
+  /* 左侧已有行号槽，正文从 --reading-inset 起算，不再叠加整体缩进 */
+  padding-left: calc(var(--reading-inset) - var(--gutter-width));
 }
 
 .editor-line-mirror {
@@ -962,7 +969,7 @@ kbd {
 }
 
 .show-line-numbers .preview-pane {
-  padding-left: clamp(40px, 4.2vw, 60px);
+  padding-left: var(--reading-inset);
 }
 
 .show-line-numbers .preview-pane [data-line] {
@@ -1524,13 +1531,16 @@ kbd {
     font-size: 12px;
   }
 
-  .diff-line {
-    gap: 6px;
-    padding: 0 18px;
+  .editor-body {
+    --reading-inset: 30px;
+    --reading-inset-plain: 18px;
+    --gutter-width: 24px;
+    --diff-no-width: 20px;
+    --diff-gap: 6px;
   }
 
-  .show-line-numbers .diff-line {
-    padding-left: 8px;
+  .diff-line {
+    padding: 0 var(--reading-inset-plain);
   }
 
   #editorInput,
@@ -1640,16 +1650,15 @@ kbd {
 
 .diff-line {
   display: flex;
-  gap: 8px;
-  /* 与预览正文取同一组左右留白，三个视图切换时正文左边缘不跳动 */
-  padding: 0 clamp(24px, 4vw, 64px);
+  gap: var(--diff-gap);
+  padding: 0 var(--reading-inset-plain);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .diff-line .diff-no {
   flex: none;
-  min-width: 2ch;
+  width: var(--diff-no-width);
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-family: var(--zs-mono, ui-monospace, monospace);
@@ -1663,10 +1672,16 @@ kbd {
   display: none;
 }
 
+.editor-body:not(.show-line-numbers) .diff-line,
+.editor-body:not(.show-line-numbers) .preview-pane,
+.editor-body:not(.show-line-numbers) .editor-container #editorInput {
+  padding-left: var(--reading-inset-plain);
+}
+
 /* 差异页的行号在流内，会额外顶出宽度；显示行号时把这段从左侧留白里扣掉，
    让正文左边缘与预览模式的行号排版对齐 */
 .show-line-numbers .diff-line {
-  padding-left: clamp(16px, 2.2vw, 38px);
+  padding-left: calc(var(--reading-inset) - var(--diff-no-width) - var(--diff-gap));
 }
 
 .diff-line .diff-text {
