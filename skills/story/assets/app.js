@@ -958,9 +958,8 @@ function renderDiffRows(rows) {
       }
       // 删除行在当前文件里没有对应行，行号列留空以保持对齐
       const no = row.type === "del" ? "" : String(lineNo);
-      const sign = row.type === "add" ? "+" : row.type === "del" ? "\u2212" : " ";
       const text = escapeHtml(row.text);
-      return `<div class="diff-line ${row.type}"><span class="diff-no">${no}</span><span class="diff-sign">${sign}</span><span class="diff-text">${text || "\u00a0"}</span></div>`;
+      return `<div class="diff-line ${row.type}"><span class="diff-no">${no}</span><span class="diff-text">${text || "\u00a0"}</span></div>`;
     })
     .join("");
   return { html, added, removed };

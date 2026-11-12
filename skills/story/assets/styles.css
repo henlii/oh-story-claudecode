@@ -1642,8 +1642,9 @@ kbd {
 
 .diff-line .diff-no {
   flex: none;
-  width: 3.2ch;
+  min-width: 2ch;
   text-align: right;
+  font-variant-numeric: tabular-nums;
   font-family: var(--zs-mono, ui-monospace, monospace);
   font-size: 11.5px;
   line-height: inherit;
@@ -1655,26 +1656,15 @@ kbd {
   display: none;
 }
 
-.diff-line .diff-sign {
-  flex: none;
-  width: 1ch;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: var(--zs-text-13);
-  color: var(--zs-ink-400);
-  user-select: none;
-}
-
 .diff-line .diff-text {
   min-width: 0;
   color: var(--zs-ink-700);
 }
 
-.diff-line.add { background: rgba(34, 154, 79, 0.13); }
-.diff-line.add .diff-sign { color: #1a7f37; }
+.diff-line.add { background: rgba(34, 154, 79, 0.24); }
 .diff-line.add .diff-text { color: var(--zs-ink-900); }
 
-.diff-line.del { background: rgba(179, 48, 42, 0.12); }
-.diff-line.del .diff-sign { color: var(--zs-danger); }
+.diff-line.del { background: rgba(179, 48, 42, 0.22); }
 .diff-line.del .diff-text {
   color: var(--zs-ink-700);
   text-decoration: line-through;
