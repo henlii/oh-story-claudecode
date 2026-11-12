@@ -960,7 +960,7 @@ kbd {
 }
 
 .show-line-numbers .preview-pane {
-  padding-left: clamp(52px, 5.5vw, 90px);
+  padding-left: clamp(40px, 4.2vw, 60px);
 }
 
 .show-line-numbers .preview-pane [data-line] {
@@ -970,9 +970,9 @@ kbd {
 .show-line-numbers .preview-pane [data-line]::before {
   content: attr(data-line);
   position: absolute;
-  left: -46px;
+  left: -36px;
   top: 0;
-  width: 36px;
+  width: 29px;
   text-align: right;
   font-family: var(--zs-mono);
   font-size: 11.5px;
@@ -1522,6 +1522,11 @@ kbd {
     font-size: 12px;
   }
 
+  .diff-line {
+    gap: 6px;
+    padding: 0 14px;
+  }
+
   #editorInput,
   .preview-pane {
     min-height: 0;
@@ -1629,10 +1634,25 @@ kbd {
 
 .diff-line {
   display: flex;
-  gap: 12px;
-  padding: 0 clamp(24px, 4vw, 64px);
+  gap: 8px;
+  padding: 0 clamp(16px, 3vw, 40px);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.diff-line .diff-no {
+  flex: none;
+  width: 3.2ch;
+  text-align: right;
+  font-family: var(--zs-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: inherit;
+  color: var(--zs-ink-300);
+  user-select: none;
+}
+
+.editor-body:not(.show-line-numbers) .diff-line .diff-no {
+  display: none;
 }
 
 .diff-line .diff-sign {

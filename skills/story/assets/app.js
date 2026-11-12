@@ -945,13 +945,22 @@ function diffLines(baseText, currentText) {
 function renderDiffRows(rows) {
   let added = 0;
   let removed = 0;
+  let lineNo = 0;
   const html = rows
     .map((row) => {
-      if (row.type === "add") added += 1;
-      if (row.type === "del") removed += 1;
+      if (row.type === "add") {
+        added += 1;
+        lineNo += 1;
+      } else if (row.type === "ctx") {
+        lineNo += 1;
+      } else {
+        removed += 1;
+      }
+      // 删除行在当前文件里没有对应行，行号列留空以保持对齐
+      const no = row.type === "del" ? "" : String(lineNo);
       const sign = row.type === "add" ? "+" : row.type === "del" ? "\u2212" : " ";
       const text = escapeHtml(row.text);
-      return `<div class="diff-line ${row.type}"><span class="diff-sign">${sign}</span><span class="diff-text">${text || "\u00a0"}</span></div>`;
+      return `<div class="diff-line ${row.type}"><span class="diff-no">${no}</span><span class="diff-sign">${sign}</span><span class="diff-text">${text || "\u00a0"}</span></div>`;
     })
     .join("");
   return { html, added, removed };
