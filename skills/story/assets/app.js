@@ -913,10 +913,11 @@ function diffLines(baseText, currentText) {
   const b = currentText.split("\n");
   const n = a.length;
   const m = b.length;
+  // 行数过大时退回「整段删除 + 整段新增」，避免 LCS 表撑爆内存
   if (n * m > 4_000_000) {
     return [
-      ...a.map((text) => ({ type: "del", text })),
-      ...b.map((text) => ({ type: "add", text })),
+      ...a.map((text, index) => ({ type: "del", text, oldNo: index + 1, newNo: 0 })),
+      ...b.map((text, index) => ({ type: "add", text, oldNo: 0, newNo: index + 1 })),
     ];
   }
   const width = m + 1;
@@ -929,35 +930,43 @@ function diffLines(baseText, currentText) {
           : Math.max(dp[(i + 1) * width + j], dp[i * width + j + 1]);
     }
   }
+  // 每行都记下基线行号与当前行号：删除行只有旧号，新增行只有新号，未改动行两者都有
   const rows = [];
   let i = 0;
   let j = 0;
   while (i < n && j < m) {
-    if (a[i] === b[j]) { rows.push({ type: "ctx", text: a[i] }); i += 1; j += 1; }
-    else if (dp[(i + 1) * width + j] >= dp[i * width + j + 1]) { rows.push({ type: "del", text: a[i] }); i += 1; }
-    else { rows.push({ type: "add", text: b[j] }); j += 1; }
+    if (a[i] === b[j]) {
+      rows.push({ type: "ctx", text: a[i], oldNo: i + 1, newNo: j + 1 });
+      i += 1;
+      j += 1;
+    } else if (dp[(i + 1) * width + j] >= dp[i * width + j + 1]) {
+      rows.push({ type: "del", text: a[i], oldNo: i + 1, newNo: 0 });
+      i += 1;
+    } else {
+      rows.push({ type: "add", text: b[j], oldNo: 0, newNo: j + 1 });
+      j += 1;
+    }
   }
-  while (i < n) { rows.push({ type: "del", text: a[i] }); i += 1; }
-  while (j < m) { rows.push({ type: "add", text: b[j] }); j += 1; }
+  while (i < n) {
+    rows.push({ type: "del", text: a[i], oldNo: i + 1, newNo: 0 });
+    i += 1;
+  }
+  while (j < m) {
+    rows.push({ type: "add", text: b[j], oldNo: 0, newNo: j + 1 });
+    j += 1;
+  }
   return rows;
 }
 
 function renderDiffRows(rows) {
   let added = 0;
   let removed = 0;
-  let lineNo = 0;
   const html = rows
     .map((row) => {
-      if (row.type === "add") {
-        added += 1;
-        lineNo += 1;
-      } else if (row.type === "ctx") {
-        lineNo += 1;
-      } else {
-        removed += 1;
-      }
-      // 删除行在当前文件里没有对应行，行号列留空以保持对齐
-      const no = row.type === "del" ? "" : String(lineNo);
+      if (row.type === "add") added += 1;
+      if (row.type === "del") removed += 1;
+      // 删除行用基线行号，新增与未改动行用当前行号；每行都有数字，行号列才不会塌宽
+      const no = row.type === "del" ? String(row.oldNo ?? "") : String(row.newNo ?? "");
       const text = escapeHtml(row.text);
       return `<div class="diff-line ${row.type}"><span class="diff-no">${no}</span><span class="diff-text">${text || "\u00a0"}</span></div>`;
     })
