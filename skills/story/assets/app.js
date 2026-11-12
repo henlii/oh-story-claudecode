@@ -7,6 +7,12 @@ try {
   if (saved === "light" || saved === "dark") themeChoice = saved;
 } catch {}
 
+function focusIfPointingDevice(element) {
+  // 触屏设备上自动 focus 会直接弹出输入法，把刚打开的正文顶走；只在有精确指针时自动聚焦
+  if (!window.matchMedia("(pointer: fine)").matches) return;
+  window.requestAnimationFrame(() => element.focus());
+}
+
 function effectiveTheme() {
   return themeChoice || (systemDark.matches ? "dark" : "light");
 }
@@ -44,6 +50,8 @@ const state = {
   // 记住作者手动展开/收起过的目录，重绘文件树时不要把人正在翻的章节文件夹关掉
   expandedDirs: new Set(),
   collapsedDirs: new Set(),
+  watchTimer: null,
+  watchStamp: "",
 };
 
 const elements = {
@@ -75,6 +83,8 @@ const elements = {
   documentMeta: document.querySelector("#documentMeta"),
   editorInput: document.querySelector("#editorInput"),
   previewPane: document.querySelector("#previewPane"),
+  diffPane: document.querySelector("#diffPane"),
+  diffBody: document.querySelector("#diffBody"),
   modeButtons: [...document.querySelectorAll(".mode-switch button")],
   deleteButton: document.querySelector("#deleteButton"),
   saveButton: document.querySelector("#saveButton"),
@@ -297,6 +307,17 @@ function createTreeEntry(node, depth = 0) {
   label.className = "tree-label";
   label.textContent = node.name;
   button.append(label);
+
+  // Git 状态徽标：改动 M / 新增 A / 删除 D / 重命名 R，目录不在仓库里时不出现
+  if (node.status) {
+    const stateCode = node.status[0] === "?" ? "A" : node.status[0];
+    const badge = document.createElement("span");
+    badge.className = "file-status";
+    badge.dataset.state = stateCode;
+    badge.textContent = stateCode;
+    badge.title = `Git 状态：${stateCode}`;
+    button.append(badge);
+  }
 
   const extension = document.createElement("span");
   extension.className = "file-ext";
@@ -710,7 +731,9 @@ async function restoreViewState() {
   // 显式链接优先于这个工作区上次打开的文稿。
   const linked = ["view", "file", "mode"].some((key) => params.has(key));
   const file = linked ? params.get("file") : saved.file;
-  const mode = (linked ? params.get("mode") : saved.mode) === "preview" ? "preview" : "edit";
+  const requestedMode = linked ? params.get("mode") : saved.mode;
+  // 白名单，否则刷新或分享链接会静默掉回编辑模式
+  const mode = ["edit", "preview", "diff"].includes(requestedMode) ? requestedMode : "edit";
   const requestedView = linked ? params.get("view") : saved.view;
   const defaultView = state.workspace.libraries.length ? "libraries" : "projects";
   const view = ["libraries", "projects"].includes(requestedView)
@@ -747,8 +770,68 @@ function deduceViewForPath(filePath) {
   return state.activeView;
 }
 
+const FILE_WATCH_INTERVAL = 2500;
+
+function stopFileWatch() {
+  if (state.watchTimer !== null) {
+    window.clearInterval(state.watchTimer);
+    state.watchTimer = null;
+  }
+}
+
+function startFileWatch() {
+  stopFileWatch();
+  const file = state.activeFile;
+  if (!file) return;
+  state.watchStamp = String(file.mtimeMs);
+  state.watchTimer = window.setInterval(async () => {
+    const watched = state.activeFile;
+    if (!watched || state.loadingFile || state.saving || state.deleting) return;
+    try {
+      const stat = await requestJson(`/api/file/stat?path=${encodeURIComponent(watched.path)}`);
+      if (state.activeFile?.path !== watched.path) return;
+      if (String(stat.mtimeMs) === state.watchStamp) return;
+      if (state.dirty) {
+        showToast("磁盘上的文件已更新，请先处理当前修改");
+        state.watchStamp = String(stat.mtimeMs);
+        return;
+      }
+      await reloadActiveFile(watched.path);
+    } catch {
+      // 文件被移走或暂时读不到，下一轮再试
+    }
+  }, FILE_WATCH_INTERVAL);
+}
+
+async function reloadActiveFile(path) {
+  const caret = elements.editorInput.selectionStart;
+  const scrollTop = elements.editorInput.scrollTop;
+  const file = await requestJson(`/api/file?path=${encodeURIComponent(path)}`);
+  if (state.activeFile?.path !== path) return;
+  const normalized = normalizeEol(file.content);
+  file.eol = detectEol(file.content);
+  file.content = normalized;
+  state.activeFile = file;
+  state.originalContent = normalized;
+  state.watchStamp = String(file.mtimeMs);
+  if (elements.editorInput.value !== normalized) {
+    elements.editorInput.value = normalized;
+    elements.editorInput.setSelectionRange(caret, caret);
+    elements.editorInput.scrollTop = scrollTop;
+  }
+  setDirty(false);
+  updateDocumentMeta();
+  scheduleLineNumbers();
+  if (state.mode === "preview") {
+    elements.previewPane.innerHTML = markdownToSafeHtml(normalized);
+  } else if (state.mode === "diff") {
+    void loadDiff();
+  }
+}
+
 async function openFile(path, { force = false } = {}) {
   if (state.loadingFile || (!force && !confirmDiscard())) return;
+  stopFileWatch();
   state.loadingFile = true;
   syncActionAvailability();
   elements.fileTree.setAttribute("aria-busy", "true");
@@ -774,7 +857,8 @@ async function openFile(path, { force = false } = {}) {
     syncActiveRow();
     syncViewState();
     scheduleLineNumbers();
-    if (state.mode === "edit") window.requestAnimationFrame(() => elements.editorInput.focus());
+    startFileWatch();
+    if (state.mode === "edit") focusIfPointingDevice(elements.editorInput);
   } catch (error) {
     showToast(error.message, "error");
   } finally {
@@ -822,6 +906,74 @@ function markdownTableCells(line) {
   if (!cells[0] && line.trimStart().startsWith("|")) cells.shift();
   if (!cells.at(-1) && line.trimEnd().endsWith("|")) cells.pop();
   return cells;
+}
+
+function diffLines(baseText, currentText) {
+  const a = baseText === null ? [] : baseText.split("\n");
+  const b = currentText.split("\n");
+  const n = a.length;
+  const m = b.length;
+  if (n * m > 4_000_000) {
+    return [
+      ...a.map((text) => ({ type: "del", text })),
+      ...b.map((text) => ({ type: "add", text })),
+    ];
+  }
+  const width = m + 1;
+  const dp = new Uint32Array((n + 1) * width);
+  for (let i = n - 1; i >= 0; i -= 1) {
+    for (let j = m - 1; j >= 0; j -= 1) {
+      dp[i * width + j] =
+        a[i] === b[j]
+          ? dp[(i + 1) * width + j + 1] + 1
+          : Math.max(dp[(i + 1) * width + j], dp[i * width + j + 1]);
+    }
+  }
+  const rows = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { rows.push({ type: "ctx", text: a[i] }); i += 1; j += 1; }
+    else if (dp[(i + 1) * width + j] >= dp[i * width + j + 1]) { rows.push({ type: "del", text: a[i] }); i += 1; }
+    else { rows.push({ type: "add", text: b[j] }); j += 1; }
+  }
+  while (i < n) { rows.push({ type: "del", text: a[i] }); i += 1; }
+  while (j < m) { rows.push({ type: "add", text: b[j] }); j += 1; }
+  return rows;
+}
+
+function renderDiffRows(rows) {
+  let added = 0;
+  let removed = 0;
+  const html = rows
+    .map((row) => {
+      if (row.type === "add") added += 1;
+      if (row.type === "del") removed += 1;
+      const sign = row.type === "add" ? "+" : row.type === "del" ? "\u2212" : " ";
+      const text = escapeHtml(row.text);
+      return `<div class="diff-line ${row.type}"><span class="diff-sign">${sign}</span><span class="diff-text">${text || "\u00a0"}</span></div>`;
+    })
+    .join("");
+  return { html, added, removed };
+}
+
+async function loadDiff() {
+  const file = state.activeFile;
+  if (!file) return;
+  elements.diffBody.innerHTML = '<p class="diff-empty">正在读取 Git 基线…</p>';
+  try {
+    const payload = await requestJson(`/api/file/diff?path=${encodeURIComponent(file.path)}`);
+    if (state.activeFile?.path !== file.path || state.mode !== "diff") return;
+    if (!payload.supported) {
+      elements.diffBody.innerHTML = '<p class="diff-empty">当前工作区不是 Git 仓库，无法比较差异。</p>';
+      return;
+    }
+    const { html } = renderDiffRows(diffLines(payload.base, payload.current));
+    elements.diffBody.innerHTML = html || '<p class="diff-empty">文件为空。</p>';
+  } catch (error) {
+    const message = error?.payload?.error?.message ?? error?.message ?? String(error);
+    elements.diffBody.innerHTML = `<p class="diff-empty">读取差异失败：${escapeHtml(message)}</p>`;
+  }
 }
 
 function markdownToSafeHtml(markdown) {
@@ -916,13 +1068,18 @@ function setMode(mode) {
   elements.modeButtons.forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
   });
+  const editing = mode === "edit";
   const previewing = mode === "preview";
-  elements.editorContainer.hidden = previewing;
+  const diffing = mode === "diff";
+  elements.editorContainer.hidden = !editing;
   elements.previewPane.hidden = !previewing;
+  elements.diffPane.hidden = !diffing;
   if (previewing) {
     elements.previewPane.innerHTML = markdownToSafeHtml(elements.editorInput.value);
+  } else if (diffing) {
+    void loadDiff();
   } else {
-    window.requestAnimationFrame(() => elements.editorInput.focus());
+    focusIfPointingDevice(elements.editorInput);
   }
   scheduleLineNumbers();
   syncViewState();
@@ -948,6 +1105,8 @@ async function saveFile() {
     file.mtimeMs = saved.mtimeMs;
     file.version = saved.version;
     file.size = saved.size;
+    // 自己刚写的这份不该被轮询当成「磁盘被外部改了」
+    state.watchStamp = String(saved.mtimeMs);
     showToast(`已保存《${file.name}》`);
     if (state.activeFile !== file) return;
     state.originalContent = sent;
@@ -1118,7 +1277,7 @@ elements.themeButton.addEventListener("click", () => {
 systemDark.addEventListener("change", applyTheme);
 elements.mobileBackButton.addEventListener("click", () => {
   document.body.classList.remove("document-open");
-  window.requestAnimationFrame(() => elements.treeSearch.focus());
+  focusIfPointingDevice(elements.treeSearch);
 });
 elements.saveButton.addEventListener("click", saveFile);
 elements.deleteButton.addEventListener("click", deleteFile);

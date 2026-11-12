@@ -167,6 +167,7 @@
                 <div class="mode-switch" role="group" aria-label="文稿模式">
                   <button type="button" data-mode="edit" aria-pressed="true">编辑</button>
                   <button type="button" data-mode="preview" aria-pressed="false">预览</button>
+                  <button type="button" data-mode="diff" aria-pressed="false">差异</button>
                 </div>
               </div>
             </header>
@@ -178,6 +179,9 @@
                 <textarea id="editorInput" spellcheck="true"></textarea>
               </div>
               <article id="previewPane" class="preview-pane" aria-label="Markdown 预览" hidden></article>
+              <div id="diffPane" class="diff-pane" aria-label="与 Git 基线的差异" hidden>
+                <div id="diffBody" class="diff-body"></div>
+              </div>
             </div>
 
             <footer class="editor-footer">

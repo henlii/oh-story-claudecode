@@ -1394,7 +1394,8 @@ kbd {
     width: 100%;
     height: 100dvh;
     min-height: 0;
-    grid-template-rows: 96px minmax(0, 1fr);
+    /* 手机端不给工作区路径留第二行 */
+    grid-template-rows: 56px minmax(0, 1fr);
     overflow: hidden;
   }
 
@@ -1403,7 +1404,7 @@ kbd {
     z-index: 20;
     top: 0;
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: 56px 40px;
+    grid-template-rows: 56px;
   }
 
   .brand-lockup {
@@ -1415,14 +1416,6 @@ kbd {
   }
 
   .workspace-identity {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    align-self: stretch;
-    padding: 0 16px;
-    border-top: 1px solid var(--zs-line);
-  }
-
-  .workspace-path {
     display: none;
   }
 
@@ -1474,9 +1467,15 @@ kbd {
   }
 
   .editor-toolbar {
-    min-height: 76px;
-    gap: 12px;
-    padding: 10px 14px 11px 16px;
+    min-height: 0;
+    gap: 8px;
+    align-items: center;
+    padding: 5px 10px 5px 12px;
+  }
+
+  /* 手机上省掉面包屑那一行，只留标题，工具栏才压得下来 */
+  .breadcrumbs {
+    display: none;
   }
 
   .mobile-back-button {
@@ -1513,12 +1512,14 @@ kbd {
   }
 
   .document-title-row h2 {
-    max-width: 58vw;
-    font-size: 18px;
+    max-width: 42vw;
+    font-size: 15px;
   }
 
   .mode-switch button {
-    padding: 0 9px;
+    height: 26px;
+    padding: 0 7px;
+    font-size: 12px;
   }
 
   #editorInput,
@@ -1601,3 +1602,89 @@ kbd {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* ── 差异视图：与 Git 基线逐行对照 ───────────────────────────────── */
+
+.diff-pane {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 8px 0 72px;
+  overflow: auto;
+  color: var(--zs-ink-900);
+  background: var(--zs-paper);
+  border: 0;
+  scrollbar-color: var(--zs-line-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.diff-body {
+  padding: 8px 0 0;
+  /* 正文按稿件排版走，中文长段落要能读；只有行首符号列保留等宽 */
+  font-family: var(--zs-serif);
+  font-size: 17px;
+  line-height: 1.9;
+  letter-spacing: 0.02em;
+}
+
+.diff-line {
+  display: flex;
+  gap: 12px;
+  padding: 0 clamp(24px, 4vw, 64px);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-line .diff-sign {
+  flex: none;
+  width: 1ch;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--zs-text-13);
+  color: var(--zs-ink-400);
+  user-select: none;
+}
+
+.diff-line .diff-text {
+  min-width: 0;
+  color: var(--zs-ink-700);
+}
+
+.diff-line.add { background: rgba(34, 154, 79, 0.13); }
+.diff-line.add .diff-sign { color: #1a7f37; }
+.diff-line.add .diff-text { color: var(--zs-ink-900); }
+
+.diff-line.del { background: rgba(179, 48, 42, 0.12); }
+.diff-line.del .diff-sign { color: var(--zs-danger); }
+.diff-line.del .diff-text {
+  color: var(--zs-ink-700);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.diff-empty {
+  margin: 0;
+  padding: 28px clamp(24px, 4vw, 64px);
+  color: var(--zs-ink-500);
+  font-family: system-ui, sans-serif;
+  font-size: var(--zs-text-13);
+}
+
+/* ── 文件树的 Git 状态徽标 ───────────────────────────────────────── */
+
+.file-status {
+  flex: none;
+  min-width: 17px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  letter-spacing: 0;
+}
+
+.file-status[data-state="M"] { color: var(--zs-warn); background: var(--zs-warn-wash); }
+.file-status[data-state="A"] { color: #1a7f37; background: rgba(34, 154, 79, 0.16); }
+.file-status[data-state="D"] { color: var(--zs-danger); background: var(--zs-danger-wash); }
+.file-status[data-state="R"] { color: var(--zs-accent-ink); background: var(--zs-accent-wash); }

@@ -260,6 +260,34 @@ function visibleDirectoryEntries(entries) {
     );
 }
 
+const GIT_STATUS_TTL_MS = 3000;
+const gitStatusCache = new Map();
+
+async function workspaceGitStatus(repoRoot) {
+  const cached = gitStatusCache.get(repoRoot);
+  if (cached && Date.now() - cached.at < GIT_STATUS_TTL_MS) return cached;
+  const result = await runGit(["status", "--porcelain", "-uall"], repoRoot);
+  const statuses = new Map();
+  if (result.ok) {
+    for (const line of result.stdout.split("\n")) {
+      if (line.length < 4) continue;
+      const code = line.slice(0, 2).trim();
+      let filePath = line.slice(3);
+      if (filePath.includes(" -> ")) filePath = filePath.split(" -> ").pop();
+      statuses.set(filePath.replace(/^"|"$/g, ""), code);
+    }
+  }
+  const entry = { at: Date.now(), repoRoot, statuses };
+  gitStatusCache.set(repoRoot, entry);
+  return entry;
+}
+
+async function gitStatusContext(directoryPath) {
+  const topLevel = await runGit(["rev-parse", "--show-toplevel"], directoryPath);
+  if (!topLevel.ok) return null;
+  return await workspaceGitStatus(topLevel.stdout.trim());
+}
+
 export async function listWorkspaceDirectory(root, requestedPath, cursorValue = null) {
   const { absolutePath, realRoot } = await resolveWorkspaceDirectory(root, requestedPath);
   const cursor = parseDirectoryCursor(cursorValue);
@@ -272,6 +300,8 @@ export async function listWorkspaceDirectory(root, requestedPath, cursorValue = 
   });
   const visibleEntries = visibleDirectoryEntries(entries);
   const page = visibleEntries.slice(cursor, cursor + DIRECTORY_PAGE_SIZE);
+  // 文件行上的 Git 状态徽标；目录不在仓库里时整列为空
+  const gitContext = await gitStatusContext(absolutePath);
   const nodes = (
     await Promise.all(
       page.map(async (entry) => {
@@ -282,12 +312,16 @@ export async function listWorkspaceDirectory(root, requestedPath, cursorValue = 
         }
         const info = await lstat(childAbsolute).catch(() => null);
         if (!info?.isFile() || info.isSymbolicLink()) return null;
+        const status = gitContext
+          ? gitContext.statuses.get(toPosixPath(relative(gitContext.repoRoot, childAbsolute))) || null
+          : null;
         return {
           name: entry.name,
           path: toPosixPath(childRelative),
           type: "file",
           editable: isEditableFile(childAbsolute) && info.size <= MAX_FILE_BYTES,
           size: info.size,
+          status,
         };
       }),
     )
@@ -622,6 +656,66 @@ async function readWorkspaceFile(root, requestedPath) {
   };
 }
 
+async function runGit(args, cwd) {
+  return await new Promise((resolvePromise) => {
+    const child = spawn("git", ["-c", "core.quotepath=false", ...args], {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    // git 不可用、目录不是仓库等情况一律降级为「不支持」，不影响文件正常打开
+    child.on("error", () => resolvePromise({ ok: false, stdout: "" }));
+    child.on("close", (code) => resolvePromise({ ok: code === 0, stdout }));
+  });
+}
+
+async function readWorkspaceFileStat(root, requestedPath) {
+  const { absolutePath, info } = await resolveWorkspacePath(root, requestedPath, {
+    editableOnly: true,
+  });
+  // 只回体积与修改时间，供前端轮询判断磁盘版本是否变了，不传正文
+  return {
+    path: toPosixPath(relative(await existingRealRoot(root), absolutePath)),
+    size: info.size,
+    mtimeMs: info.mtimeMs,
+  };
+}
+
+async function readWorkspaceFileDiff(root, requestedPath) {
+  const { absolutePath } = await resolveWorkspacePath(root, requestedPath, {
+    editableOnly: true,
+  });
+  const info = await stat(absolutePath).catch(() => null);
+  if (!info || info.size > MAX_FILE_BYTES) {
+    throw new DashboardError(413, "file_too_large", "文件超过 2 MiB，无法比较差异");
+  }
+
+  const topLevel = await runGit(["rev-parse", "--show-toplevel"], dirname(absolutePath));
+  if (!topLevel.ok) {
+    return { supported: false, reason: "not_a_git_repo", path: requestedPath };
+  }
+
+  const repoRoot = topLevel.stdout.trim();
+  const relPath = toPosixPath(relative(repoRoot, absolutePath));
+  const current = await readFile(absolutePath, "utf8");
+  // HEAD 里没有这个文件时 base 为 null，前端按「整个文件都是新增」渲染
+  const head = await runGit(["show", `HEAD:${relPath}`], repoRoot);
+
+  return {
+    supported: true,
+    path: requestedPath,
+    repoRoot,
+    relPath,
+    tracked: head.ok,
+    base: head.ok ? head.stdout : null,
+    current,
+  };
+}
+
 async function replaceFileAtomically(target, content, mode) {
   const temporary = resolve(dirname(target), `.${basename(target)}.story-dashboard-${randomUUID()}.tmp`);
   await writeFile(temporary, content, { encoding: "utf8", mode });
@@ -804,6 +898,22 @@ export function createDashboardServer({ root, allowNetwork = false }) {
             url.searchParams.get("q") || "",
             url.searchParams.get("scope") || "",
           ),
+        );
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/api/file/stat") {
+        sendJson(
+          response,
+          200,
+          await readWorkspaceFileStat(workspaceRoot, url.searchParams.get("path") || ""),
+        );
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/api/file/diff") {
+        sendJson(
+          response,
+          200,
+          await readWorkspaceFileDiff(workspaceRoot, url.searchParams.get("path") || ""),
         );
         return;
       }
