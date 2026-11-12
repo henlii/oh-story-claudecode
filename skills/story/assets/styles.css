@@ -1524,7 +1524,7 @@ kbd {
 
   .diff-line {
     gap: 6px;
-    padding: 0 14px;
+    padding: 0 8px;
   }
 
   #editorInput,
@@ -1635,7 +1635,7 @@ kbd {
 .diff-line {
   display: flex;
   gap: 8px;
-  padding: 0 clamp(16px, 3vw, 40px);
+  padding: 0 clamp(8px, 1.6vw, 20px);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
