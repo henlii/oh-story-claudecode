@@ -52,6 +52,7 @@ const state = {
   collapsedDirs: new Set(),
   watchTimer: null,
   watchStamp: "",
+  scrollResetPending: false,
 };
 
 const elements = {
@@ -849,6 +850,11 @@ async function openFile(path, { force = false } = {}) {
     expandParentDirs(file.path);
     setActiveView(deduceViewForPath(file.path));
     setMode(state.mode);
+    // 换稿后回到顶端：不沿用上一篇读到一半的位置（自动刷新不走这条路径，保留阅读位置）
+    elements.editorInput.scrollTop = 0;
+    elements.previewPane.scrollTop = 0;
+    elements.diffPane.scrollTop = 0;
+    state.scrollResetPending = true;
     updateDocumentMeta();
     updateCursorPosition();
     elements.editorEmpty.hidden = true;
@@ -987,6 +993,11 @@ async function loadDiff() {
     }
     const { html } = renderDiffRows(diffLines(payload.base, payload.current));
     elements.diffBody.innerHTML = html || '<p class="diff-empty">文件为空。</p>';
+    // 差异内容是异步渲染的，换稿后要等这一轮填完再归零
+    if (state.scrollResetPending) {
+      elements.diffPane.scrollTop = 0;
+      state.scrollResetPending = false;
+    }
   } catch (error) {
     const message = error?.payload?.error?.message ?? error?.message ?? String(error);
     elements.diffBody.innerHTML = `<p class="diff-empty">读取差异失败：${escapeHtml(message)}</p>`;
